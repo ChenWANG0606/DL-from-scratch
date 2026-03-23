@@ -86,13 +86,10 @@ class RoPE(nn.Module):
         # 根据 RoPE 公式预先构造 cos 和 sin 查找表。
         # q / k 的形状通常为 (N, H, S, D)，这里预计算后方便按序列长度切片。
         # ------------------------------------------------------------------------------------------------------------------------------
-        position = torch.arange(max_len, dtype=torch.float32).unsqueeze(-1)
-        theta = torch.exp(
-            torch.arange(0, head_dim, 2, dtype=torch.float32) * (-math.log(base) / head_dim)
-        )
-        angles = position * theta
-        cos[0, 0, :, :] = torch.repeat_interleave(torch.cos(angles), repeats=2, dim=-1)
-        sin[0, 0, :, :] = torch.repeat_interleave(torch.sin(angles), repeats=2, dim=-1)
+        position = torch.arange(max_len).unsqueeze_(-1)
+        theta = torch.exp(torch.arange(0, head_dim, 2) * (-math.log(base)/head_dim))
+        cos[0,0,:,:] = torch.repeat_interleave(torch.cos(position * theta),2,dim = -1)
+        sin[0,0,:,:] = torch.repeat_interleave(torch.sin(position * theta),2,dim = -1)
         # ------------------------------------------------------------------------------------------------------------------------------
         self.register_buffer("cos_cached", cos)
         self.register_buffer("sin_cached", sin)
@@ -109,8 +106,8 @@ class RoPE(nn.Module):
         # 将最后一维拆成两部分，并按 RoPE 的形式重排。
         # ------------------------------------------------------------------------------------------------------------------------------
         rotated_x = torch.zeros_like(x)
-        rotated_x[..., 0::2] = -x[..., 1::2]
-        rotated_x[..., 1::2] = x[..., 0::2]
+        rotated_x[:,:,:,0::2] = -x[:,:,:,1::2]
+        rotated_x[:,:,:,1::2] = x[:,:,:,0::2]
         # ------------------------------------------------------------------------------------------------------------------------------
         return rotated_x
 
@@ -138,10 +135,12 @@ class RoPE(nn.Module):
 
         # 按当前序列长度截取 cos / sin，并对 q、k 做旋转。
         # ------------------------------------------------------------------------------------------------------------------------------
-        cos = self.cos_cached[:, :, :seq_len, :].to(dtype=q.dtype, device=q.device)
-        sin = self.sin_cached[:, :, :seq_len, :].to(dtype=q.dtype, device=q.device)
-        q_rotated = q * cos + self.rotate_half(q) * sin
-        k_rotated = k * cos + self.rotate_half(k) * sin
+        cos = self.cos_cached[:,:,:seq_len,:]
+        sin = self.sin_cached[:,:,:seq_len,:]
+
+        q_rotated = q*cos+self.rotate_half(q)*sin
+        k_rotated = k*cos+self.rotate_half(k)*sin
+
         # ------------------------------------------------------------------------------------------------------------------------------
         return q_rotated, k_rotated
 
